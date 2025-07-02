@@ -1,95 +1,71 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>Ringtone Widget</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 10px;
-    }
-    label {
-      margin-right: 10px;
-    }
-    select {
-      padding: 4px;
-    }
-    button {
-      margin-left: 10px;
-      padding: 4px 10px;
-    }
-  </style>
+  <meta charset="UTF-8" />
+  <title>Ringtone Output Selector</title>
 </head>
-<body>
-  <label for="outputSelect">🎧 Secondary Ringtone Output:</label>
-  <select id="outputSelect"></select>
-  <button id="testBtn">🎵 Test Ringtone</button>
+<body style="font-family: sans-serif; margin: 20px;">
+  <label>
+    🎧 <strong>Secondary Ringtone Output:</strong>
+    <select id="outputSelect"></select>
+  </label>
+  <button id="testBtn" style="margin-left: 10px;">🎵 Test Ringtone</button>
 
   <script>
-  let audio = new Audio('https://desktop.wxcc-us1.cisco.com/sounds/ringtone.mp3');
-  let currentSinkId = '';
-  audio.loop = true;
+    let audio = new Audio('https://desktop.wxcc-us1.cisco.com/sounds/ringtone.mp3');
+    audio.loop = true;
+    let currentSinkId = '';
 
-  async function loadAudioDevices() {
-    try {
-      // Ask permission
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+    async function loadAudioDevices() {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const outputDevices = devices.filter(d => d.kind === 'audiooutput');
+        const select = document.getElementById('outputSelect');
+        select.innerHTML = '';
 
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const outputSelect = document.getElementById('outputSelect');
-      outputSelect.innerHTML = '';
+        outputDevices.forEach(device => {
+          const option = document.createElement('option');
+          option.value = device.deviceId;
+          option.textContent = device.label || `Output (${device.deviceId.substring(0, 6)}...)`;
+          select.appendChild(option);
+        });
 
-      const speakers = devices.filter(d => d.kind === 'audiooutput');
-      if (speakers.length === 0) {
-        const opt = document.createElement('option');
-        opt.text = 'No audio outputs';
-        outputSelect.appendChild(opt);
-        return;
+        currentSinkId = select.value;
+
+        select.addEventListener('change', () => {
+          currentSinkId = select.value;
+          if (typeof audio.setSinkId === 'function') {
+            audio.setSinkId(currentSinkId).catch(console.warn);
+          }
+        });
+
+      } catch (err) {
+        console.warn("Cannot enumerate devices:", err);
       }
-
-      speakers.forEach(device => {
-        const option = document.createElement('option');
-        option.value = device.deviceId;
-        option.textContent = device.label || `Output (${device.deviceId})`;
-        outputSelect.appendChild(option);
-      });
-
-      currentSinkId = outputSelect.value;
-
-      outputSelect.addEventListener('change', () => {
-        currentSinkId = outputSelect.value;
-        if (typeof audio.setSinkId === 'function') {
-          audio.setSinkId(currentSinkId).catch(console.warn);
-        }
-      });
-
-    } catch (err) {
-      console.error('Permission denied or error:', err);
-      alert("Microphone permission is required to list audio devices.");
     }
-  }
 
-  function playRingtone() {
-    if (typeof audio.setSinkId === 'function' && currentSinkId) {
-      audio.setSinkId(currentSinkId).catch(console.warn);
+    function playRingtone() {
+      if (typeof audio.setSinkId === 'function' && currentSinkId) {
+        audio.setSinkId(currentSinkId).then(() => {
+          audio.play().catch(console.warn);
+        });
+      } else {
+        audio.play().catch(console.warn);
+      }
     }
-    audio.play().catch(console.warn);
-  }
 
-  function stopRingtone() {
-    audio.pause();
-    audio.currentTime = 0;
-  }
+    function stopRingtone() {
+      audio.pause();
+      audio.currentTime = 0;
+    }
 
-  document.getElementById('testBtn').addEventListener('click', () => {
-    playRingtone();
-    setTimeout(stopRingtone, 3000);
-  });
+    document.getElementById('testBtn').addEventListener('click', () => {
+      playRingtone();
+      setTimeout(stopRingtone, 3000);
+    });
 
-  // Run only on interaction
-  document.body.addEventListener('click', () => {
+    // Call only once on load (no prompt)
     loadAudioDevices();
-  }, { once: true });
-</script>
+  </script>
 </body>
 </html>
