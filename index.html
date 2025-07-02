@@ -26,16 +26,27 @@
   <button id="testBtn">🎵 Test Ringtone</button>
 
   <script>
-    let audio = new Audio('https://desktop.wxcc-us1.cisco.com/sounds/ringtone.mp3');
-    let currentSinkId = '';
-    audio.loop = true;
+  let audio = new Audio('https://desktop.wxcc-us1.cisco.com/sounds/ringtone.mp3');
+  let currentSinkId = '';
+  audio.loop = true;
 
-    async function loadAudioDevices() {
+  async function loadAudioDevices() {
+    try {
+      // Ask permission
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+
       const devices = await navigator.mediaDevices.enumerateDevices();
       const outputSelect = document.getElementById('outputSelect');
       outputSelect.innerHTML = '';
 
       const speakers = devices.filter(d => d.kind === 'audiooutput');
+      if (speakers.length === 0) {
+        const opt = document.createElement('option');
+        opt.text = 'No audio outputs';
+        outputSelect.appendChild(opt);
+        return;
+      }
+
       speakers.forEach(device => {
         const option = document.createElement('option');
         option.value = device.deviceId;
@@ -43,65 +54,42 @@
         outputSelect.appendChild(option);
       });
 
-      if (speakers.length > 0) {
-        currentSinkId = speakers[0].deviceId;
-      }
+      currentSinkId = outputSelect.value;
 
       outputSelect.addEventListener('change', () => {
         currentSinkId = outputSelect.value;
         if (typeof audio.setSinkId === 'function') {
-          audio.setSinkId(currentSinkId).catch(err => {
-            console.warn('Failed to set sinkId:', err);
-          });
+          audio.setSinkId(currentSinkId).catch(console.warn);
         }
       });
+
+    } catch (err) {
+      console.error('Permission denied or error:', err);
+      alert("Microphone permission is required to list audio devices.");
     }
+  }
 
-    function playRingtone() {
-      if (typeof audio.setSinkId === 'function' && currentSinkId) {
-        audio.setSinkId(currentSinkId).catch(console.warn);
-      }
-      audio.play().catch(console.warn);
+  function playRingtone() {
+    if (typeof audio.setSinkId === 'function' && currentSinkId) {
+      audio.setSinkId(currentSinkId).catch(console.warn);
     }
+    audio.play().catch(console.warn);
+  }
 
-    function stopRingtone() {
-      audio.pause();
-      audio.currentTime = 0;
-    }
+  function stopRingtone() {
+    audio.pause();
+    audio.currentTime = 0;
+  }
 
-    document.getElementById('testBtn').addEventListener('click', () => {
-      playRingtone();
-      setTimeout(stopRingtone, 3000);
-    });
+  document.getElementById('testBtn').addEventListener('click', () => {
+    playRingtone();
+    setTimeout(stopRingtone, 3000);
+  });
 
-    // Optional: Bind to actual Webex event (_dtcc)
-    function bindWebexEvents() {
-      if (!window._dtcc) {
-        console.log('[Ringtone Widget] _dtcc not available yet.');
-        return;
-      }
-
-      window._dtcc.subscribe('TASK', task => {
-        const event = task.eventType;
-        console.log('[Ringtone Widget] Webex Event:', event);
-
-        if (event === 'NEW') {
-          playRingtone();
-        } else if (event === 'ACCEPTED' || event === 'ENDED') {
-          stopRingtone();
-        }
-      });
-    }
-
-    // Re-check for _dtcc every second (if needed)
-    const checkInterval = setInterval(() => {
-      if (window._dtcc) {
-        clearInterval(checkInterval);
-        bindWebexEvents();
-      }
-    }, 1000);
-
+  // Run only on interaction
+  document.body.addEventListener('click', () => {
     loadAudioDevices();
-  </script>
+  }, { once: true });
+</script>
 </body>
 </html>
