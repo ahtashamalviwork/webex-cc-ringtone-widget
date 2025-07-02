@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Secondary Ringtone Selector</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 6px 10px;
+    }
+    label {
+      font-size: 13px;
+      margin-right: 5px;
+    }
+    select {
+      font-size: 13px;
+      padding: 2px;
+    }
+  </style>
+</head>
+<body>
+  <label for="outputSelect">🔔 Ringtone Output:</label>
+  <select id="outputSelect"></select>
+
+  <audio id="ringtone" loop preload="auto" src="https://YOUR_DOMAIN.com/assets/ringtone.mp3"></audio>
+
+  <script>
+    const outputSelect = document.getElementById('outputSelect');
+    const ringtone = document.getElementById('ringtone');
+    let selectedDeviceId = null;
+
+    // 1. Populate available audio outputs
+    async function loadAudioOutputs() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      outputSelect.innerHTML = ''; // clear
+
+      devices
+        .filter((d) => d.kind === 'audiooutput')
+        .forEach((device) => {
+          const option = document.createElement('option');
+          option.value = device.deviceId;
+          option.text = device.label || `Speaker (${device.deviceId})`;
+          outputSelect.appendChild(option);
+        });
+
+      const saved = localStorage.getItem('ringDeviceId');
+      if (saved) {
+        outputSelect.value = saved;
+        selectedDeviceId = saved;
+      }
+    }
+
+    outputSelect.addEventListener('change', async () => {
+      selectedDeviceId = outputSelect.value;
+      localStorage.setItem('ringDeviceId', selectedDeviceId);
+    });
+
+    // 2. Set audio output
+    async function setOutputDevice() {
+      if (typeof ringtone.setSinkId !== 'function') {
+        console.warn('setSinkId is not supported by this browser.');
+        return;
+      }
+
+      try {
+        await ringtone.setSinkId(selectedDeviceId);
+      } catch (e) {
+        console.error('Error setting sink ID:', e);
+      }
+    }
+
+    // 3. Play ringtone
+    async function playRingtone() {
+      await setOutputDevice();
+      try {
+        await ringtone.play();
+      } catch (e) {
+        console.error('Autoplay blocked or failed:', e);
+      }
+    }
+
+    // 4. Stop ringtone
+    function stopRingtone() {
+      ringtone.pause();
+      ringtone.currentTime = 0;
+    }
+
+    // 5. Listen for Webex Contact Center TASK events
+    function setupWebexEvents() {
+      if (!window._dtcc || !window._dtcc.subscribe) {
+        console.warn('Webex SDK not available.');
+        return;
+      }
+
+      window._dtcc.subscribe('TASK', async (task) => {
+        const event = task?.event;
+        console.log('[Webex TASK Event]', event);
+
+        if (event === 'NEW') {
+          await playRingtone();
+        } else if (event === 'ACCEPTED' || event === 'ENDED') {
+          stopRingtone();
+        }
+      });
+    }
+
+    // 6. Initialization
+    async function init() {
+      await loadAudioOutputs();
+      setupWebexEvents();
+    }
+
+    init();
+  </script>
+</body>
+</html>
