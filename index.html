@@ -1,93 +1,67 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Webex CC Ringtone Widget</title>
+  <meta charset="UTF-8">
+  <title>Ringtone Widget</title>
   <style>
     body {
-      margin: 0;
-      font-family: sans-serif;
-      font-size: 12px;
-      padding: 8px;
-      background-color: #f4f4f4;
+      font-family: Arial, sans-serif;
+      padding: 10px;
     }
-
-    #widget {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    label {
+      margin-right: 10px;
     }
-
-    select, button {
-      font-size: 12px;
-      padding: 4px 6px;
+    select {
+      padding: 4px;
+    }
+    button {
+      margin-left: 10px;
+      padding: 4px 10px;
     }
   </style>
 </head>
 <body>
-  <div id="widget">
-    <label for="output">🎧 Secondary Ringtone Output:</label>
-    <select id="output"></select>
-    <button id="testBtn">🔈 Test Ringtone</button>
-  </div>
+  <label for="outputSelect">🎧 Secondary Ringtone Output:</label>
+  <select id="outputSelect"></select>
+  <button id="testBtn">🎵 Test Ringtone</button>
 
   <script>
-    const select = document.getElementById('output');
-    const testBtn = document.getElementById('testBtn');
-
-    const audio = new Audio('https://desktop.wxcc-us1.cisco.com/sounds/ringtone.mp3');
+    let audio = new Audio('https://desktop.wxcc-us1.cisco.com/sounds/ringtone.mp3');
+    let currentSinkId = '';
     audio.loop = true;
 
-    let selectedDeviceId = null;
-
     async function loadAudioDevices() {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const outputs = devices.filter(d => d.kind === 'audiooutput');
-        select.innerHTML = '';
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const outputSelect = document.getElementById('outputSelect');
+      outputSelect.innerHTML = '';
 
-        outputs.forEach(device => {
-          const opt = document.createElement('option');
-          opt.value = device.deviceId;
-          opt.text = device.label || `Output (${device.deviceId})`;
-          select.appendChild(opt);
-        });
+      const speakers = devices.filter(d => d.kind === 'audiooutput');
+      speakers.forEach(device => {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.textContent = device.label || `Output (${device.deviceId})`;
+        outputSelect.appendChild(option);
+      });
 
-        const saved = localStorage.getItem('ringDeviceId');
-        if (saved && outputs.some(d => d.deviceId === saved)) {
-          select.value = saved;
-          selectedDeviceId = saved;
-        } else if (outputs.length > 0) {
-          selectedDeviceId = outputs[0].deviceId;
-          select.value = selectedDeviceId;
-        }
-      } catch (e) {
-        console.error('[Widget] Failed to load devices:', e);
+      if (speakers.length > 0) {
+        currentSinkId = speakers[0].deviceId;
       }
+
+      outputSelect.addEventListener('change', () => {
+        currentSinkId = outputSelect.value;
+        if (typeof audio.setSinkId === 'function') {
+          audio.setSinkId(currentSinkId).catch(err => {
+            console.warn('Failed to set sinkId:', err);
+          });
+        }
+      });
     }
 
-    select.addEventListener('change', () => {
-      selectedDeviceId = select.value;
-      localStorage.setItem('ringDeviceId', selectedDeviceId);
-    });
-
-    async function setOutput() {
-      if (typeof audio.setSinkId === 'function' && selectedDeviceId) {
-        try {
-          await audio.setSinkId(selectedDeviceId);
-        } catch (err) {
-          console.warn('[Widget] setSinkId error:', err);
-        }
+    function playRingtone() {
+      if (typeof audio.setSinkId === 'function' && currentSinkId) {
+        audio.setSinkId(currentSinkId).catch(console.warn);
       }
-    }
-
-    async function playRingtone() {
-      await setOutput();
-      try {
-        await audio.play();
-      } catch (e) {
-        console.warn('[Widget] audio.play error:', e);
-      }
+      audio.play().catch(console.warn);
     }
 
     function stopRingtone() {
@@ -95,10 +69,37 @@
       audio.currentTime = 0;
     }
 
-    testBtn.addEventListener('click', async () => {
-      await playRingtone();
-      setTimeout(stopRingtone, 4000);
+    document.getElementById('testBtn').addEventListener('click', () => {
+      playRingtone();
+      setTimeout(stopRingtone, 3000);
     });
+
+    // Optional: Bind to actual Webex event (_dtcc)
+    function bindWebexEvents() {
+      if (!window._dtcc) {
+        console.log('[Ringtone Widget] _dtcc not available yet.');
+        return;
+      }
+
+      window._dtcc.subscribe('TASK', task => {
+        const event = task.eventType;
+        console.log('[Ringtone Widget] Webex Event:', event);
+
+        if (event === 'NEW') {
+          playRingtone();
+        } else if (event === 'ACCEPTED' || event === 'ENDED') {
+          stopRingtone();
+        }
+      });
+    }
+
+    // Re-check for _dtcc every second (if needed)
+    const checkInterval = setInterval(() => {
+      if (window._dtcc) {
+        clearInterval(checkInterval);
+        bindWebexEvents();
+      }
+    }, 1000);
 
     loadAudioDevices();
   </script>
