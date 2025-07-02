@@ -1,131 +1,113 @@
-import {html, css, LitElement} from 'lit';
+(function () {
+  const container = document.createElement('div');
+  container.style.display = 'inline-flex';
+  container.style.alignItems = 'center';
+  container.style.gap = '8px';
+  container.style.padding = '4px 6px';
+  container.style.fontSize = '12px';
 
-export class RSSWidget extends LitElement {
-  static get styles() {
-    return css`
-      .rss-widget {
-        display: inline-flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        min-width: 100px;
-        height: 60px;
-        overflow: hidden;
-        border: 1px solid #ccc;
-        background-color: var(--background-color, white);
-        color: var(--text-color, black);
-        --link-color: blue;
-        --link-color-dark: lightblue;
-      }
-      .title {
-        flex: 1;
-        margin: 0 10px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        display: inline-block;
-        animation: scroll 10s linear infinite;
-      }
-      .title-container {
-        overflow: hidden;
-      }
-      .feed-title {
-        text-align: center;
-      }
-      .feed-items {
-        display: flex;
-      }
-      button {
-        margin: 0 5px;
-      }
-      @keyframes scroll {
-        0% { transform: translateX(100%); }
-        100% { transform: translateX(-100%); }
-      }
+  const label = document.createElement('label');
+  label.textContent = '🎧 Secondary Ringtone Output:';
 
-      /* Dark mode styles */
-      .rss-widget.dark {
-        background-color: black;
-        color: white;
-        --link-color: var(--link-color-dark);
+  const select = document.createElement('select');
+  select.style.fontSize = '12px';
+  select.style.padding = '2px';
+
+  const testButton = document.createElement('button');
+  testButton.textContent = '🔈 Test Ringtone';
+  testButton.style.fontSize = '12px';
+  testButton.style.padding = '2px 6px';
+  testButton.style.cursor = 'pointer';
+
+  const audio = document.createElement('audio');
+  audio.src = 'https://desktop.wxcc-us1.cisco.com/sounds/ringtone.mp3';
+  audio.loop = true;
+
+  let selectedDeviceId = null;
+
+  async function loadAudioDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const outputs = devices.filter((d) => d.kind === 'audiooutput');
+      select.innerHTML = '';
+
+      outputs.forEach((device) => {
+        const opt = document.createElement('option');
+        opt.value = device.deviceId;
+        opt.text = device.label || `Output (${device.deviceId})`;
+        select.appendChild(opt);
+      });
+
+      const savedId = localStorage.getItem('ringDeviceId');
+      if (savedId && outputs.find(d => d.deviceId === savedId)) {
+        select.value = savedId;
+        selectedDeviceId = savedId;
+      } else if (outputs.length > 0) {
+        selectedDeviceId = outputs[0].deviceId;
+        select.value = selectedDeviceId;
       }
-
-      a {
-        color: var(--link-color);
-        text-decoration: none;
-      }
-
-      a:hover {
-        text-decoration: underline;
-      }
-    `;
-  }
-
-  static get properties() {
-    return {
-      rss: { attribute: "rss", type: String},
-      currentItemIndex: { type: Number },
-      items: { type: Array },
-      dark: { attribute: "dark", type: Boolean }
-    }
-  };
-
-  constructor() {
-    super();
-    this.dark = false;
-    this.rss = 'https://developer.webex.com/api/content/blog/feed';
-    this.items = [];
-    this.currentItemIndex = 0;
-    this.feed = {};
-  }
-
-  // This method will be called whenever the rssFeed property changes.
-  async updated(changedProperties) {
-    if (changedProperties.has('rss')) {
-      const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(this.rss)}`);
-      const data = await response.json();
-      this.items = data.items;
-      this.feed = data.feed;
+    } catch (err) {
+      console.error('[Ringtone Widget] Failed to load outputs:', err);
     }
   }
 
-  nextItem() {
-    this.currentItemIndex = (this.currentItemIndex + 1) % this.items.length;
+  select.addEventListener('change', () => {
+    selectedDeviceId = select.value;
+    localStorage.setItem('ringDeviceId', selectedDeviceId);
+  });
+
+  async function setAudioOutput() {
+    if (typeof audio.setSinkId === 'function' && selectedDeviceId) {
+      try {
+        await audio.setSinkId(selectedDeviceId);
+      } catch (err) {
+        console.warn('[Ringtone Widget] setSinkId error:', err);
+      }
+    }
   }
 
-  previousItem() {
-    this.currentItemIndex = (this.currentItemIndex - 1 + this.items.length) % this.items.length;
+  async function playRingtone() {
+    await setAudioOutput();
+    try {
+      await audio.play();
+    } catch (err) {
+      console.warn('[Ringtone Widget] audio.play error:', err);
+    }
   }
 
-  render() {
-    const currentItem = this.items[this.currentItemIndex] || {};
-    return html`
-      <div class="rss-widget ${this.dark && "dark"}">
-        <div class="feed-title">${this.feed.title}: ${this.items.length} items</div>
-        <div class="feed-items">
-          <div>
-            <button 
-              @click="${this.previousItem}"
-              ?disabled="${this.currentItemIndex === 0}"
-            >
-              &lt;
-            </button>
-          </div>
-          <div>
-            <div class="title-container">
-              <a class="title" href="${currentItem.link}">${currentItem.title}</a>
-            </div>
-          </div>
-          <div>
-            <button 
-              @click="${this.nextItem}"
-              ?disabled="${this.currentItemIndex === this.items.length - 1}"
-            >
-              &gt;
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
+  function stopRingtone() {
+    audio.pause();
+    audio.currentTime = 0;
   }
-}
-customElements.define('rss-widget', RSSWidget);
+
+  function bindWebexEvents() {
+    if (!window._dtcc || !window._dtcc.subscribe) {
+      console.warn('[Ringtone Widget] _dtcc not available yet.');
+      return;
+    }
+
+    window._dtcc.subscribe('TASK', async (task) => {
+      const event = task?.event;
+      console.log('[Ringtone Widget] TASK event:', event);
+
+      if (event === 'NEW') {
+        await playRingtone();
+      } else if (event === 'ACCEPTED' || event === 'ENDED') {
+        stopRingtone();
+      }
+    });
+  }
+
+  testButton.addEventListener('click', async () => {
+    await playRingtone();
+    setTimeout(stopRingtone, 10000); // Play for 4 seconds
+  });
+
+  container.appendChild(label);
+  container.appendChild(select);
+  container.appendChild(testButton);
+  document.body.appendChild(container);
+
+  loadAudioDevices();
+  bindWebexEvents();
+})();
